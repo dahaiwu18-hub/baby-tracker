@@ -8,30 +8,35 @@ const App = {
 
   // ==================== 初始化 ====================
   async init() {
-    this._config = this._loadConfig();
+    // 0. 立刻显示界面（不等待任何网络请求）
+    document.getElementById('splash').classList.add('hidden');
+    document.getElementById('setup-warning').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    this._updateHeader(null);
+    window.addEventListener('hashchange', () => this._handleRoute());
+    this._handleRoute();
 
-    // 数据库配置（内置默认值，无需手动填写）
+    // 1. 加载配置
+    this._config = this._loadConfig();
+    AI.loadConfig();
+
+    // 2. 后台初始化数据库（不阻塞界面）
     const supabaseUrl = 'https://rdytpgdvkvudbefkryjt.supabase.co';
     const supabaseKey = 'sb_publishable_oSjOOayNgorP2dJ21zdRvg_2_NDkxK8';
-
-    // 初始化数据库
     DB.init(supabaseUrl, supabaseKey);
 
-    if (!DB.ready) {
-      this._showSetupWarning();
-      return;
-    }
-
-    // 检查数据库连接（5秒超时）
-    try {
-      const profile = await Promise.race([
-        DB.getBabyProfile(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-      ]);
-      AI.loadConfig();
-      this._startApp(profile);
-    } catch (e) {
-      this._showSetupWarning();
+    // 3. 后台连接数据库，更新头部
+    if (DB.ready) {
+      try {
+        const profile = await Promise.race([
+          DB.getBabyProfile(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+        ]);
+        this._updateHeader(profile);
+      } catch (e) {
+        // 连接失败不影响使用，页面已经可见
+        console.log('DB connect delayed:', e.message);
+      }
     }
   },
 
