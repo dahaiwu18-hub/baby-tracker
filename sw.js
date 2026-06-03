@@ -1,4 +1,4 @@
-const CACHE_NAME = 'baby-tracker-v3';
+const CACHE_NAME = 'baby-tracker-v4';
 
 // 策略：网络优先，离线降级为缓存
 self.addEventListener('install', (e) => {
