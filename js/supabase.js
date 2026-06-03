@@ -88,7 +88,7 @@ const DB = {
   async addFeeding(record) {
     const { data, error } = await this._client
       .from('feedings')
-      .insert({ ...record, created_at: new Date().toISOString() })
+      .insert({ ...record, created_at: record.created_at || new Date().toISOString() })
       .select()
       .single();
     if (error) throw error;
@@ -133,7 +133,7 @@ const DB = {
   async addDiaper(record) {
     const { data, error } = await this._client
       .from('diapers')
-      .insert({ ...record, created_at: new Date().toISOString() })
+      .insert({ ...record, created_at: record.created_at || new Date().toISOString() })
       .select()
       .single();
     if (error) throw error;
@@ -177,7 +177,7 @@ const DB = {
   async addGrowth(record) {
     const { data, error } = await this._client
       .from('growth_records')
-      .insert({ ...record, created_at: new Date().toISOString() })
+      .insert({ ...record, created_at: record.created_at || new Date().toISOString() })
       .select()
       .single();
     if (error) throw error;
@@ -206,7 +206,7 @@ const DB = {
   async addVitamin(record) {
     const { data, error } = await this._client
       .from('vitamin_records')
-      .insert({ ...record, created_at: new Date().toISOString() })
+      .insert({ ...record, created_at: record.created_at || new Date().toISOString() })
       .select()
       .single();
     if (error) throw error;
