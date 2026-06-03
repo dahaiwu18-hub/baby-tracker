@@ -116,39 +116,46 @@ const App = {
     }
   },
 
-  // ==================== 工具函数 ====================
+  // ==================== 工具函数（全部 UTC+8） ====================
+
+  /** 显示北京时间 HH:MM（入库 UTC → 显示 +8） */
   _formatTime(isoStr) {
     if (!isoStr) return '';
     const d = new Date(isoStr);
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const h = (d.getUTCHours() + 8) % 24;
+    const m = d.getUTCMinutes();
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   },
 
   _formatDate(isoStr) {
     if (!isoStr) return '';
     const d = new Date(isoStr);
-    return `${d.getMonth() + 1}月${d.getDate()}日`;
+    const bjMs = d.getTime() + 8 * 60 * 60 * 1000;
+    const bj = new Date(bjMs);
+    return `${bj.getMonth() + 1}月${bj.getDate()}日`;
   },
 
-  /** 北京时间的今天日期 */
+  /** 今天北京时间日期 */
   _getToday() {
     const d = new Date();
-    const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000); // 转北京时间
-    return bj.toISOString().split('T')[0];
+    d.setHours(d.getHours() + 8); // 本地时间可能非北京，保险+8
+    return d.toISOString().split('T')[0];
   },
 
-  /** 返回北京时间的 HH:MM */
+  /** 返回北京时间 HH:MM */
   _getBeijingTime() {
     const d = new Date();
-    const h = d.getHours();
-    const m = d.getMinutes();
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const utcH = d.getUTCHours();
+    const utcM = d.getUTCMinutes();
+    const bjH = (utcH + 8) % 24;
+    return `${String(bjH).padStart(2, '0')}:${String(utcM).padStart(2, '0')}`;
   },
 
-  /** 北京时间 HH:MM 转 ISO 字符串 */
+  /** 北京时间 HH:MM → Supabase UTC ISO（入库 -8） */
   _bjToISO(timeStr) {
     const [h, m] = timeStr.split(':').map(Number);
     const d = new Date();
-    d.setHours(h, m, 0, 0);
+    d.setUTCHours(h - 8, m, 0, 0);
     return d.toISOString();
   },
 
