@@ -1195,7 +1195,6 @@ const App = {
 
   // ==================== 设置页面 ====================
   async _renderSettings(container) {
-    // 从 DB 加载持久化数据
     let dbSettings = {};
     let dbProfile = null;
     if (DB.ready) {
@@ -1206,104 +1205,47 @@ const App = {
     }
 
     const aiConfig = AI.config || {};
-    // 优先 AI.config，fallback 到 DB settings
-    const aiEndpoint = aiConfig.endpoint || dbSettings.ai_endpoint || 'https://api.deepseek.com/v1/chat/completions';
-    const aiModel = aiConfig.model || dbSettings.ai_model || 'deepseek-chat';
-    const isDS = aiEndpoint.includes('deepseek');
-    const isOAI = aiEndpoint.includes('openai');
-    const isMS = aiEndpoint.includes('moonshot');
-    const isCustom = !isDS && !isOAI && !isMS;
-
-    const babyName = dbProfile?.name || this._config.babyName || '';
-    const babyBirth = dbProfile?.birth_date || this._config.babyBirth || '';
+    const babyName = dbProfile?.name || '';
     const userName = dbSettings.user_name || localStorage.getItem('user_name') || '';
 
-    const dbConnected = DB.ready;
-    const dbStatusText = dbConnected ? '✅ 已连接' : '⬜ 未连接';
-    const dbStatusColor = dbConnected ? 'color:#00B894' : 'color:#B2BEC3';
-
     container.innerHTML = `
-      <!-- 数据库状态 -->
+      <!-- 当前配置状态 -->
       <div class="settings-section">
-        <h3>🗄️ 数据库状态 <span style="${dbStatusColor};font-size:14px">${dbStatusText}</span></h3>
+        <h3>📋 当前配置</h3>
         <div class="card">
-          <p class="text-muted" style="font-size:13px">数据库连接信息已内置，无需手动配置。</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px">
+            <div class="text-muted">👶 宝宝</div><div>${babyName || '未设置'}</div>
+            <div class="text-muted">👤 记录者</div><div>${userName || '未设置'}</div>
+            <div class="text-muted">🤖 AI 模型</div><div>DeepSeek Chat</div>
+          </div>
+          ${!babyName ? '<p class="text-muted mt-12" style="font-size:12px">💡 宝宝信息可通过 <strong>首页 → 点击顶部宝宝名字</strong> 修改</p>' : ''}
         </div>
       </div>
 
-      <!-- 宝宝信息 -->
+      <!-- AI API Key -->
       <div class="settings-section">
-        <h3>👶 宝宝信息</h3>
-        <div class="card">
-          <div class="setting-input-group">
-            <label>宝宝名字</label>
-            <input type="text" id="settingBabyName" value="${babyName}" placeholder="例如：小明">
-          </div>
-          <div class="setting-input-group">
-            <label>出生日期</label>
-            <input type="date" id="settingBabyBirth" value="${babyBirth}">
-          </div>
-          <button class="btn btn-primary btn-block" onclick="App._saveBabyProfile()">💾 保存宝宝信息</button>
-        </div>
-      </div>
-
-      <!-- 记录者信息 -->
-      <div class="settings-section">
-        <h3>👤 记录者称呼</h3>
-        <div class="card">
-          <div class="setting-input-group">
-            <label>你的称呼（用于记录中的"记录者"）</label>
-            <input type="text" id="settingUserName" value="${userName}" placeholder="例如：妈妈">
-            <div class="hint">会保存到数据库，清缓存也不会丢</div>
-          </div>
-          <button class="btn btn-primary btn-block" onclick="App._saveUserName()">💾 保存</button>
-        </div>
-      </div>
-
-      <!-- AI 配置 -->
-      <div class="settings-section">
-        <h3>🤖 AI 助手配置</h3>
+        <h3>🔑 AI API Key</h3>
         <div class="card">
           <p class="text-muted" style="font-size:13px;margin-bottom:12px">
-            默认使用 <strong>DeepSeek Chat</strong> 模型。API Key 仅保存在本地浏览器，不上传数据库。
+            Key 仅保存在本地浏览器，不上传服务器，安全。
           </p>
           <div class="setting-input-group">
-            <label>API Key（仅本地保存，安全）</label>
+            <label>DeepSeek API Key</label>
             <input type="password" id="settingAiKey" value="${aiConfig.apiKey || ''}" placeholder="sk-...">
+            <div class="hint">清缓存后需重新填写</div>
           </div>
-          <div class="setting-input-group">
-            <label>API 端点</label>
-            <select id="settingAiEndpoint">
-              <option value="https://api.deepseek.com/v1/chat/completions" ${isDS ? 'selected' : ''}>DeepSeek</option>
-              <option value="https://api.openai.com/v1/chat/completions" ${isOAI ? 'selected' : ''}>OpenAI</option>
-              <option value="https://api.moonshot.cn/v1/chat/completions" ${isMS ? 'selected' : ''}>Moonshot</option>
-              <option value="custom" ${isCustom ? 'selected' : ''}>自定义</option>
-            </select>
-          </div>
-          <div class="setting-input-group" id="customEndpointGroup" style="${isCustom ? 'display:block' : 'display:none'}">
-            <label>自定义 API 地址</label>
-            <input type="text" id="settingAiCustomEndpoint" value="${isCustom ? aiEndpoint : ''}">
-          </div>
-          <div class="setting-input-group">
-            <label>模型名称</label>
-            <input type="text" id="settingAiModel" value="${aiModel}" placeholder="deepseek-chat">
-            <div class="hint">端点 + 模型会保存到数据库，清缓存不会丢</div>
-          </div>
-          <button class="btn btn-primary btn-block" onclick="App._saveAIConfig()">💾 保存 AI 配置</button>
+          <button class="btn btn-primary btn-block" onclick="App._saveApiKeyOnly()">💾 保存</button>
         </div>
       </div>
     `;
+  },
 
-    // AI 端点选择切换
-    document.getElementById('settingAiEndpoint').onchange = function() {
-      const customGroup = document.getElementById('customEndpointGroup');
-      if (this.value === 'custom') {
-        customGroup.style.display = 'block';
-      } else {
-        customGroup.style.display = 'none';
-        document.getElementById('settingAiCustomEndpoint').value = this.value;
-      }
-    };
+  /** 仅保存 API Key */
+  _saveApiKeyOnly() {
+    const apiKey = document.getElementById('settingAiKey').value.trim();
+    if (!apiKey) { this._showToast('请输入 API Key'); return; }
+    AI.saveApiKey(apiKey);
+    this._showToast('✅ 已保存');
   },
 
   /** 保存宝宝信息 */
