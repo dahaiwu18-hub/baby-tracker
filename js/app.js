@@ -129,9 +129,27 @@ const App = {
     return `${d.getMonth() + 1}月${d.getDate()}日`;
   },
 
+  /** 北京时间的今天日期 */
   _getToday() {
     const d = new Date();
-    return d.toISOString().split('T')[0];
+    const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000); // 转北京时间
+    return bj.toISOString().split('T')[0];
+  },
+
+  /** 返回北京时间的 HH:MM */
+  _getBeijingTime() {
+    const d = new Date();
+    const h = d.getHours();
+    const m = d.getMinutes();
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  },
+
+  /** 北京时间 HH:MM 转 ISO 字符串 */
+  _bjToISO(timeStr) {
+    const [h, m] = timeStr.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d.toISOString();
   },
 
   _showConfirm(title, message, onConfirm) {
@@ -287,8 +305,8 @@ const App = {
 
   /** 根据起始基准日计算今天该吃哪种维生素（每天交替轮换） */
   _suggestVitaminType() {
-    // 基准日：2026-06-02 = D3
-    const baseDate = new Date('2026-06-02');
+    // 基准日：2026-06-02 = D3（使用本地时间）
+    const baseDate = new Date(2026, 5, 2); // month 0-index: June=5
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const diffDays = Math.floor((today - baseDate) / (1000 * 60 * 60 * 24));
@@ -378,18 +396,44 @@ const App = {
     }
   },
 
-  /** 快速记录：拉屎 */
-  async _quickDiaper(type) {
-    try {
+  /** 快速记录：拉屎（弹窗选时间） */
+  _quickDiaperPopup(type) {
+    const label = type === 'poop' ? '拉屎' : type === 'pee' ? '尿尿' : '大小便';
+    const emoji = type === 'poop' ? '💩' : type === 'pee' ? '💦' : '💩💦';
+    const now = this._getBeijingTime();
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-dialog" style="text-align:left">
+        <h3 style="text-align:center">${emoji} 记录${label}</h3>
+        <div class="form-group mt-16">
+          <label>时间</label>
+          <input type="time" id="quickDiaperTime" value="${now}">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary btn-block" onclick="this.closest('.confirm-overlay').remove()">取消</button>
+          <button class="btn btn-primary btn-block" id="quickDiaperOkBtn">确认</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById('quickDiaperOkBtn').onclick = async () => {
+      const timeVal = document.getElementById('quickDiaperTime').value || now;
       await DB.addDiaper({
         type: type,
+        created_at: this._bjToISO(timeVal),
         created_by: localStorage.getItem('user_name') || '家长'
       });
-      this._showToast('✅ 已记录');
+      overlay.remove();
+      this._showToast(`✅ ${label}已记录 ${timeVal}`);
       this._renderDashboard(document.getElementById('appContent'));
-    } catch (e) {
-      this._showToast('❌ 记录失败: ' + e.message);
-    }
+    };
+  },
+
+  /** 快速记录：拉屎（旧版兼容，改为弹窗） */
+  async _quickDiaper(type) {
+    this._quickDiaperPopup(type);
   },
 
   /** 快速记录：维生素 */
@@ -665,18 +709,9 @@ const App = {
     }
   },
 
-  /** 快捷尿布（从首页/记录页快速按钮） */
+  /** 快捷尿布（从首页/记录页快速按钮，弹窗选时间） */
   async _quickDiaperRef(type) {
-    try {
-      await DB.addDiaper({
-        type: type,
-        created_by: localStorage.getItem('user_name') || '家长'
-      });
-      this._showToast('✅ 已记录');
-      this.navigate('dashboard');
-    } catch (e) {
-      this._showToast('❌ ' + e.message);
-    }
+    this._quickDiaperPopup(type);
   },
 
   /** 提交生长记录 */
