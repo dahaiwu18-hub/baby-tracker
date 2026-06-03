@@ -357,7 +357,7 @@ const App = {
           </div>
           <div class="form-group">
             <label>时间</label>
-            <input type="time" id="quickFeedTime" value="${new Date().toTimeString().slice(0, 5)}">
+            <input type="time" id="quickFeedTime" value="${this._getBeijingTime()}">
           </div>
           <div class="form-group">
             <label>奶量 (ml)</label>
@@ -410,6 +410,7 @@ const App = {
           feed_time: feedTime || null,
           amount_ml: amount ? Number(amount) : null,
           side: side || null,
+          created_at: feedTime ? this._bjToISO(feedTime) : undefined,
           created_by: localStorage.getItem('user_name') || '家长'
         });
         overlay.remove();
@@ -530,7 +531,7 @@ const App = {
             </div>
             <div class="form-group">
               <label>喂养时间</label>
-              <input type="time" id="feedingTime" value="${new Date().toTimeString().slice(0, 5)}">
+              <input type="time" id="feedingTime" value="${this._getBeijingTime()}">
             </div>
             <div class="form-group" id="feedingAmountGroup">
               <label>奶量 (ml)</label>
@@ -625,7 +626,7 @@ const App = {
             </div>
             <div class="form-group">
               <label>时间</label>
-              <input type="time" id="vitaminTime" value="${new Date().toTimeString().slice(0, 5)}">
+              <input type="time" id="vitaminTime" value="${this._getBeijingTime()}">
             </div>
             <div class="form-group">
               <label>备注</label>
@@ -705,6 +706,7 @@ const App = {
         amount_ml: amount ? Number(amount) : null,
         side: type === 'breastfeeding' ? side : null,
         notes: notes || null,
+        created_at: feedTime ? this._bjToISO(feedTime) : undefined,
         created_by: localStorage.getItem('user_name') || '家长'
       });
       this._showToast('✅ 喂养记录已保存');
