@@ -97,6 +97,7 @@ const DB = {
 
   /** 获取今日喂养记录 */
   async getTodayFeedings() {
+    if (!this._client) return [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const { data, error } = await this._client
@@ -141,6 +142,7 @@ const DB = {
 
   /** 获取今日尿布记录 */
   async getTodayDiapers() {
+    if (!this._client) return [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const { data, error } = await this._client
