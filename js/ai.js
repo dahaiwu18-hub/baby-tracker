@@ -7,22 +7,59 @@ const AI = {
   _config: null,
   _messages: [],
 
-  /** 从 localStorage 加载配置 */
-  loadConfig() {
+  /** 从 localStorage 加载（仅 apiKey） */
+  loadConfigFromLocal() {
     try {
-      const saved = localStorage.getItem('ai_config');
+      const saved = localStorage.getItem('ai_api_key');
       if (saved) {
-        this._config = JSON.parse(saved);
+        this._config = { ...(this._config || {}), apiKey: saved };
         return true;
       }
     } catch (e) { /* ignore */ }
     return false;
   },
 
-  /** 保存配置到 localStorage */
-  saveConfig(endpoint, apiKey, model) {
-    this._config = { endpoint, apiKey, model };
-    localStorage.setItem('ai_config', JSON.stringify(this._config));
+  /** 从 DB 加载（端点 + 模型），合并已加载的 apiKey */
+  loadConfigFromDB(endpoint, model) {
+    const apiKey = this._config?.apiKey || '';
+    this._config = {
+      endpoint: endpoint || 'https://api.deepseek.com/v1/chat/completions',
+      apiKey: apiKey,
+      model: model || 'deepseek-chat'
+    };
+  },
+
+  /** 加载全部配置（兼容旧调用） */
+  loadConfig() {
+    this.loadConfigFromLocal();
+    if (!this._config) {
+      this._config = {
+        endpoint: 'https://api.deepseek.com/v1/chat/completions',
+        apiKey: '',
+        model: 'deepseek-chat'
+      };
+    }
+  },
+
+  /** 保存 apiKey 到 localStorage（仅此一项，不放数据库） */
+  saveApiKey(apiKey) {
+    localStorage.setItem('ai_api_key', apiKey);
+    this._config = { ...(this._config || {}), apiKey };
+  },
+
+  /** 保存端点 + 模型到数据库 */
+  async saveEndpointAndModel(endpoint, model) {
+    if (DB.ready) {
+      await DB.saveSettings({
+        ai_endpoint: endpoint,
+        ai_model: model
+      });
+    }
+    this._config = {
+      ...(this._config || {}),
+      endpoint: endpoint || this._config?.endpoint || 'https://api.deepseek.com/v1/chat/completions',
+      model: model || this._config?.model || 'deepseek-chat'
+    };
   },
 
   get config() { return this._config; },
