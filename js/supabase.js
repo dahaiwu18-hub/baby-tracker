@@ -82,6 +82,30 @@ const DB = {
     }
   },
 
+  /** 获取应用设置（从 baby_profiles.settings JSONB） */
+  async getSettings() {
+    if (!this._client) return {};
+    try {
+      const profile = await this.getBabyProfile();
+      return profile?.settings || {};
+    } catch (e) {
+      return {};
+    }
+  },
+
+  /** 合并保存应用设置 */
+  async saveSettings(partial) {
+    if (!this._client) return;
+    const profile = await this.getBabyProfile();
+    if (!profile) return;
+    const current = profile.settings || {};
+    const merged = { ...current, ...partial };
+    await this._client
+      .from('baby_profiles')
+      .update({ settings: merged, updated_at: new Date().toISOString() })
+      .eq('id', profile.id);
+  },
+
   // ==================== 喂养记录 ====================
 
   /** 添加喂养记录 */
