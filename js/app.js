@@ -16,16 +16,18 @@ const App = {
     window.addEventListener('hashchange', () => this._handleRoute());
     this._handleRoute();
 
-    // 1. 加载配置
+    // 1. 加载本地 localStorage 配置
     this._config = this._loadConfig();
-    AI.loadConfig();
 
-    // 2. 后台初始化数据库（不阻塞界面）
+    // 2. 初始化 AI（先从 localStorage 读 apiKey，端点/模型等 DB 连接后再加载）
+    AI.loadConfigFromLocal();
+
+    // 3. 后台初始化数据库
     const supabaseUrl = 'https://rdytpgdvkvudbefkryjt.supabase.co';
     const supabaseKey = 'sb_publishable_oSjOOayNgorP2dJ21zdRvg_2_NDkxK8';
     DB.init(supabaseUrl, supabaseKey);
 
-    // 3. 后台连接数据库，更新头部
+    // 4. 后台连接数据库，加载所有持久化设置
     if (DB.ready) {
       try {
         const profile = await Promise.race([
@@ -33,8 +35,16 @@ const App = {
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
         ]);
         this._updateHeader(profile);
+
+        // 从 DB settings 加载：记录者、AI端点、AI模型
+        if (profile?.settings) {
+          const s = profile.settings;
+          if (s.user_name) localStorage.setItem('user_name', s.user_name);
+          if (s.ai_endpoint || s.ai_model) {
+            AI.loadConfigFromDB(s.ai_endpoint, s.ai_model);
+          }
+        }
       } catch (e) {
-        // 连接失败不影响使用，页面已经可见
         console.log('DB connect delayed:', e.message);
       }
     }
@@ -1191,27 +1201,15 @@ const App = {
     const dbStatusColor = dbConnected ? 'color:#00B894' : 'color:#B2BEC3';
 
     container.innerHTML = `
-      <!-- Supabase 数据库配置（第一步！） -->
+      <!-- 数据库状态 -->
       <div class="settings-section">
-        <h3>🗄️ 数据库配置 <span style="${dbStatusColor};font-size:14px">${dbStatusText}</span></h3>
+        <h3>🗄️ 数据库状态 <span style="${dbStatusColor};font-size:14px">${dbStatusText}</span></h3>
         <div class="card">
-          <p class="text-muted mb-8" style="font-size:13px">
-            ⚠️ <strong>请先连接数据库</strong>，再填写宝宝信息。
-          </p>
-          <div class="setting-input-group">
-            <label>Supabase URL</label>
-            <input type="text" id="settingSupabaseUrl" value="${config.supabaseUrl || ''}" placeholder="https://xxxxx.supabase.co">
-          </div>
-          <div class="setting-input-group">
-            <label>Supabase Anon Key</label>
-            <input type="text" id="settingSupabaseKey" value="${config.supabaseKey || ''}" placeholder="sb_publishable_... 或 eyJh...">
-            <div class="hint">从 Supabase 项目设置 → API 中获取</div>
-          </div>
-          <button class="btn btn-primary btn-block" onclick="App._saveSupabaseConfig()">🔗 连接数据库</button>
+          <p class="text-muted" style="font-size:13px">数据库连接信息已内置，无需手动配置。</p>
         </div>
       </div>
 
-      <!-- 宝宝信息（第二步） -->
+      <!-- 宝宝信息 -->
       <div class="settings-section">
         <h3>👶 宝宝信息</h3>
         <div class="card">
@@ -1227,64 +1225,49 @@ const App = {
         </div>
       </div>
 
-      <!-- AI 配置 -->
+      <!-- 记录者信息 -->
       <div class="settings-section">
-        <h3>🤖 AI 助手配置</h3>
-        <div class="card">
-          <p class="text-muted mb-8" style="font-size:13px">
-            支持 OpenAI 兼容接口。如果你没有 OpenAI 的 Key，可以使用 
-            <strong>DeepSeek</strong>（便宜）或 <strong>Moonshot</strong> 等国产服务。
-          </p>
-          <div class="setting-input-group">
-            <label>API 端点</label>
-            <select id="settingAiEndpoint">
-              <option value="https://api.openai.com/v1/chat/completions" ${aiConfig.endpoint?.includes('openai') ? 'selected' : ''}>OpenAI</option>
-              <option value="https://api.deepseek.com/v1/chat/completions" ${aiConfig.endpoint?.includes('deepseek') ? 'selected' : ''}>DeepSeek</option>
-              <option value="https://api.moonshot.cn/v1/chat/completions" ${aiConfig.endpoint?.includes('moonshot') ? 'selected' : ''}>Moonshot</option>
-              <option value="custom" ${aiConfig.endpoint && !aiConfig.endpoint.includes('openai') && !aiConfig.endpoint.includes('deepseek') && !aiConfig.endpoint.includes('moonshot') ? 'selected' : ''}>自定义</option>
-            </select>
-          </div>
-          <div class="setting-input-group" id="customEndpointGroup" style="${aiConfig.endpoint && !['https://api.openai.com/v1/chat/completions','https://api.deepseek.com/v1/chat/completions','https://api.moonshot.cn/v1/chat/completions'].includes(aiConfig.endpoint) ? 'display:block' : 'display:none'}">
-            <label>自定义 API 地址</label>
-            <input type="text" id="settingAiCustomEndpoint" value="${!['https://api.openai.com/v1/chat/completions','https://api.deepseek.com/v1/chat/completions','https://api.moonshot.cn/v1/chat/completions'].includes(aiConfig.endpoint || '') ? (aiConfig.endpoint || '') : ''}" placeholder="https://your-api.com/v1/chat/completions">
-          </div>
-          <div class="setting-input-group">
-            <label>API Key</label>
-            <input type="password" id="settingAiKey" value="${aiConfig.apiKey || ''}" placeholder="sk-...">
-          </div>
-          <div class="setting-input-group">
-            <label>模型名称</label>
-            <input type="text" id="settingAiModel" value="${aiConfig.model || 'gpt-4o-mini'}" placeholder="gpt-4o-mini / deepseek-chat">
-            <div class="hint">DeepSeek 用 deepseek-chat，Moonshot 用 moonshot-v1-8k</div>
-          </div>
-          <button class="btn btn-primary btn-block" onclick="App._saveAIConfig()">💾 保存 AI 配置</button>
-        </div>
-      </div>
-
-      <!-- 用户信息 -->
-      <div class="settings-section">
-        <h3>👤 我的信息</h3>
+        <h3>👤 记录者称呼</h3>
         <div class="card">
           <div class="setting-input-group">
             <label>你的称呼（用于记录中的"记录者"）</label>
             <input type="text" id="settingUserName" value="${localStorage.getItem('user_name') || ''}" placeholder="例如：妈妈">
+            <div class="hint">会保存到数据库，清缓存也不会丢</div>
           </div>
-          <button class="btn btn-secondary btn-block" onclick="App._saveUserName()">💾 保存</button>
+          <button class="btn btn-primary btn-block" onclick="App._saveUserName()">💾 保存</button>
         </div>
       </div>
 
-      <!-- 数据库搭建指南 -->
+      <!-- AI 配置 -->
       <div class="settings-section">
-        <h3>📖 数据库搭建指南</h3>
+        <h3>🤖 AI 助手配置</h3>
         <div class="card">
-          <div style="font-size:14px;line-height:1.8">
-            <p><strong>第 1 步</strong>：打开 <a href="https://supabase.com" target="_blank">supabase.com</a>，用 GitHub 注册</p>
-            <p><strong>第 2 步</strong>：创建新项目，设置数据库密码</p>
-            <p><strong>第 3 步</strong>：进入项目 → SQL Editor → 执行下方 SQL</p>
-            <p><strong>第 4 步</strong>：进入项目 → Settings → API，复制 URL 和 anon key</p>
-            <p><strong>第 5 步</strong>：填入上方配置后点击"连接数据库"</p>
+          <p class="text-muted" style="font-size:13px;margin-bottom:12px">
+            默认使用 <strong>DeepSeek Chat</strong> 模型。API Key 仅保存在本地浏览器，不上传数据库。
+          </p>
+          <div class="setting-input-group">
+            <label>API Key（仅本地保存，安全）</label>
+            <input type="password" id="settingAiKey" value="${aiConfig.apiKey || ''}" placeholder="sk-...">
           </div>
-          <button class="btn btn-secondary btn-block mt-16" onclick="App._showSQL()">📋 查看建表 SQL</button>
+          <div class="setting-input-group">
+            <label>API 端点</label>
+            <select id="settingAiEndpoint">
+              <option value="https://api.deepseek.com/v1/chat/completions" ${aiConfig.endpoint?.includes('deepseek') ? 'selected' : ''}>DeepSeek</option>
+              <option value="https://api.openai.com/v1/chat/completions" ${aiConfig.endpoint?.includes('openai') ? 'selected' : ''}>OpenAI</option>
+              <option value="https://api.moonshot.cn/v1/chat/completions" ${aiConfig.endpoint?.includes('moonshot') ? 'selected' : ''}>Moonshot</option>
+              <option value="custom" ${aiConfig.endpoint && !aiConfig.endpoint.includes('deepseek') && !aiConfig.endpoint.includes('openai') && !aiConfig.endpoint.includes('moonshot') ? 'selected' : ''}>自定义</option>
+            </select>
+          </div>
+          <div class="setting-input-group" id="customEndpointGroup" style="${aiConfig.endpoint && !['https://api.deepseek.com/v1/chat/completions','https://api.openai.com/v1/chat/completions','https://api.moonshot.cn/v1/chat/completions'].includes(aiConfig.endpoint||'') ? 'display:block' : 'display:none'}">
+            <label>自定义 API 地址</label>
+            <input type="text" id="settingAiCustomEndpoint" value="${!['https://api.deepseek.com/v1/chat/completions','https://api.openai.com/v1/chat/completions','https://api.moonshot.cn/v1/chat/completions'].includes(aiConfig.endpoint||'') ? (aiConfig.endpoint||'') : ''}">
+          </div>
+          <div class="setting-input-group">
+            <label>模型名称</label>
+            <input type="text" id="settingAiModel" value="${aiConfig.model || 'deepseek-chat'}" placeholder="deepseek-chat">
+            <div class="hint">端点 + 模型会保存到数据库，清缓存不会丢</div>
+          </div>
+          <button class="btn btn-primary btn-block" onclick="App._saveAIConfig()">💾 保存 AI 配置</button>
         </div>
       </div>
     `;
@@ -1299,36 +1282,6 @@ const App = {
         document.getElementById('settingAiCustomEndpoint').value = this.value;
       }
     };
-  },
-
-  /** 保存 Supabase 配置 */
-  async _saveSupabaseConfig() {
-    const url = document.getElementById('settingSupabaseUrl').value.trim();
-    const key = document.getElementById('settingSupabaseKey').value.trim();
-
-    if (!url || !key) {
-      this._showToast('请填写 URL 和 Key');
-      return;
-    }
-
-    const ok = DB.init(url, key);
-    if (!ok) {
-      this._showToast('❌ 配置格式有误，请检查');
-      return;
-    }
-
-    // 保存配置
-    this.setConfig('supabaseUrl', url);
-    this.setConfig('supabaseKey', key);
-
-    // 测试连接
-    try {
-      await DB.getBabyProfile();
-      this._showToast('✅ 数据库连接成功！');
-      this._renderSettings(document.getElementById('appContent'));
-    } catch (e) {
-      this._showToast('⚠️ 已保存，但连接测试未通过。请先执行建表 SQL');
-    }
   },
 
   /** 保存宝宝信息 */
@@ -1359,7 +1312,7 @@ const App = {
   },
 
   /** 保存 AI 配置 */
-  _saveAIConfig() {
+  async _saveAIConfig() {
     const endpointSelect = document.getElementById('settingAiEndpoint');
     let endpoint = endpointSelect.value;
     if (endpoint === 'custom') {
@@ -1368,141 +1321,29 @@ const App = {
     const apiKey = document.getElementById('settingAiKey').value.trim();
     const model = document.getElementById('settingAiModel').value.trim();
 
-    if (!endpoint || !apiKey) {
-      this._showToast('请填写 API 地址和 Key');
+    if (!apiKey) {
+      this._showToast('请填写 API Key');
       return;
     }
 
-    AI.saveConfig(endpoint, apiKey, model || 'gpt-4o-mini');
+    // apiKey 仅存本地
+    AI.saveApiKey(apiKey);
+    // 端点 + 模型存数据库
+    await AI.saveEndpointAndModel(endpoint || 'https://api.deepseek.com/v1/chat/completions', model || 'deepseek-chat');
     this._showToast('✅ AI 配置已保存');
   },
 
   /** 保存用户称呼 */
-  _saveUserName() {
+  async _saveUserName() {
     const name = document.getElementById('settingUserName').value.trim();
     localStorage.setItem('user_name', name || '家长');
+    // 同步保存到数据库 settings
+    if (DB.ready) {
+      try { await DB.saveSettings({ user_name: name || '家长' }); } catch (e) {}
+    }
     this._showToast('✅ 已保存');
   },
 
-  /** 显示建表 SQL */
-  _showSQL() {
-    const sql = `-- 宝宝成长记录 - 数据库建表 SQL
--- 在 Supabase SQL Editor 中执行
-
--- 1. 宝宝资料表
-CREATE TABLE baby_profiles (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  nickname TEXT,
-  birth_date DATE,
-  gender TEXT,
-  avatar_url TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- 2. 喂养记录表
-CREATE TABLE feedings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  baby_id UUID REFERENCES baby_profiles(id) ON DELETE CASCADE DEFAULT (SELECT id FROM baby_profiles LIMIT 1),
-  feeding_type TEXT NOT NULL CHECK (feeding_type IN ('breastfeeding', 'formula', 'pumped_milk', 'solid_food')),
-  amount_ml NUMERIC,
-  start_time TIMESTAMP,
-  side TEXT CHECK (side IN ('left', 'right', 'both')),
-  notes TEXT,
-  created_by TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 3. 尿布记录表
-CREATE TABLE diapers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  baby_id UUID REFERENCES baby_profiles(id) ON DELETE CASCADE DEFAULT (SELECT id FROM baby_profiles LIMIT 1),
-  time TIMESTAMP,
-  type TEXT NOT NULL CHECK (type IN ('pee', 'poop', 'both')),
-  color TEXT,
-  consistency TEXT,
-  notes TEXT,
-  created_by TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 4. 生长记录表
-CREATE TABLE growth_records (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  baby_id UUID REFERENCES baby_profiles(id) ON DELETE CASCADE DEFAULT (SELECT id FROM baby_profiles LIMIT 1),
-  record_date DATE DEFAULT CURRENT_DATE,
-  height_cm NUMERIC(5,1),
-  weight_kg NUMERIC(5,2),
-  head_circumference_cm NUMERIC(4,1),
-  notes TEXT,
-  created_by TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 5. 维生素记录表
-CREATE TABLE vitamin_records (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  baby_id UUID REFERENCES baby_profiles(id) ON DELETE CASCADE DEFAULT (SELECT id FROM baby_profiles LIMIT 1),
-  record_date DATE DEFAULT CURRENT_DATE,
-  vitamin_type TEXT NOT NULL CHECK (vitamin_type IN ('AD', 'D3')),
-  taken BOOLEAN DEFAULT TRUE,
-  time TIME,
-  notes TEXT,
-  created_by TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 6. AI 聊天历史表
-CREATE TABLE chat_history (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-  content TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 开启 RLS（可选，家庭应用可以先关掉）
-ALTER TABLE baby_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE feedings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE diapers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE growth_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vitamin_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE chat_history ENABLE ROW LEVEL SECURITY;
-
--- 允许所有操作（家庭内部使用）
-CREATE POLICY "Allow all" ON baby_profiles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON feedings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON diapers FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON growth_records FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON vitamin_records FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all" ON chat_history FOR ALL USING (true) WITH CHECK (true);
-`;
-
-    const overlay = document.createElement('div');
-    overlay.className = 'confirm-overlay';
-    overlay.style.alignItems = 'flex-start';
-    overlay.style.paddingTop = '60px';
-    overlay.innerHTML = `
-      <div class="confirm-dialog" style="max-width:480px;max-height:80vh;overflow-y:auto;text-align:left">
-        <h3 style="text-align:center">📋 建表 SQL</h3>
-        <p class="text-muted" style="font-size:12px;text-align:center">复制以下 SQL 到 Supabase SQL Editor 执行</p>
-        <pre style="background:#F8F9FA;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin-top:12px;max-height:50vh;overflow-y:auto">${sql}</pre>
-        <div class="form-actions" style="margin-top:12px">
-          <button class="btn btn-primary btn-block" onclick="App._copySQL(\`${sql.replace(/`/g, '\\`')}\`)">📋 复制 SQL</button>
-        </div>
-        <button class="btn btn-secondary btn-block mt-8" onclick="this.closest('.confirm-overlay').remove()">关闭</button>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-  },
-
-  _copySQL(sql) {
-    navigator.clipboard.writeText(sql).then(() => {
-      this._showToast('✅ SQL 已复制到剪贴板');
-    }).catch(() => {
-      this._showToast('请手动复制');
-    });
-  }
 };
 
 // ==================== 启动 ====================
