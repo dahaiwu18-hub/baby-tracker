@@ -116,47 +116,65 @@ const App = {
     }
   },
 
-  // ==================== 工具函数（全部 UTC+8） ====================
+  // ==================== 工具函数（显式 UTC+8） ====================
 
-  /** 显示北京时间 HH:MM（入库 UTC → 显示 +8） */
+  /** 获取当前北京时间对象 {y,m,d,h,min} */
+  _beijingNow() {
+    const d = new Date();
+    // 本地时间就是北京时间（用户在中国）
+    return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate(), h: d.getHours(), min: d.getMinutes() };
+  },
+
+  /** 显示北京时间 HH:MM */
   _formatTime(isoStr) {
     if (!isoStr) return '';
-    const d = new Date(isoStr);
-    const h = (d.getUTCHours() + 8) % 24;
-    const m = d.getUTCMinutes();
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    // 直接从 ISO 字符串提取 UTC 时间，+8
+    const m = isoStr.match(/T(\d{2}):(\d{2})/);
+    if (!m) return '';
+    const h = (parseInt(m[1]) + 8) % 24;
+    return `${String(h).padStart(2, '0')}:${m[2]}`;
   },
 
+  /** 显示北京日期 */
   _formatDate(isoStr) {
     if (!isoStr) return '';
-    const d = new Date(isoStr);
-    const bjMs = d.getTime() + 8 * 60 * 60 * 1000;
-    const bj = new Date(bjMs);
-    return `${bj.getMonth() + 1}月${bj.getDate()}日`;
+    const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):/);
+    if (!m) return '';
+    // UTC 日期 + 考虑 UTC 小时 +8 可能跨天
+    const utcH = parseInt(m[4]);
+    const d = new Date(Date.UTC(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]), utcH + 8));
+    return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
   },
 
-  /** 今天北京时间日期 */
+  /** 今天北京日期 YYYY-MM-DD */
   _getToday() {
-    const d = new Date();
-    d.setHours(d.getHours() + 8); // 本地时间可能非北京，保险+8
-    return d.toISOString().split('T')[0];
+    const bj = this._beijingNow();
+    return `${bj.y}-${String(bj.m).padStart(2, '0')}-${String(bj.d).padStart(2, '0')}`;
   },
 
   /** 返回北京时间 HH:MM */
   _getBeijingTime() {
-    const d = new Date();
-    const utcH = d.getUTCHours();
-    const utcM = d.getUTCMinutes();
-    const bjH = (utcH + 8) % 24;
-    return `${String(bjH).padStart(2, '0')}:${String(utcM).padStart(2, '0')}`;
+    const bj = this._beijingNow();
+    return `${String(bj.h).padStart(2, '0')}:${String(bj.min).padStart(2, '0')}`;
   },
 
-  /** 北京时间 HH:MM → Supabase UTC ISO（入库 -8） */
+  /** 北京时间 HH:MM → UTC ISO 字符串（直接构造，无时区计算） */
   _bjToISO(timeStr) {
     const [h, m] = timeStr.split(':').map(Number);
-    const d = new Date();
-    d.setUTCHours(h - 8, m, 0, 0);
-    return d.toISOString();
+    const bj = this._beijingNow();
+    // 构造 UTC ISO: 北京时间 HH:MM = UTC (HH-8):MM
+    const utcH = h - 8;
+    if (utcH >= 0) {
+      return `${bj.y}-${String(bj.m).padStart(2, '0')}-${String(bj.d).padStart(2, '0')}T${String(utcH).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+    } else {
+      // 跨天：前一天
+      const prev = new Date(bj.y, bj.m - 1, bj.d - 1);
+      const py = prev.getFullYear();
+      const pm = String(prev.getMonth() + 1).padStart(2, '0');
+      const pd = String(prev.getDate()).padStart(2, '0');
+      const ph = String(utcH + 24).padStart(2, '0');
+      return `${py}-${pm}-${pd}T${ph}:${String(m).padStart(2, '0')}:00.000Z`;
+    }
   },
 
   _showConfirm(title, message, onConfirm) {
