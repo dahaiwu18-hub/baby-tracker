@@ -287,7 +287,7 @@ const App = {
                 : `<span style="color:#D63031">未吃</span>`
               }
             </div>
-            <div class="stat-sub">建议: ${suggestVitamin}</div>
+            <div class="stat-sub">${vitaminTaken ? '明日建议' : '建议'}: ${suggestVitamin}</div>
           </div>
 
           <!-- 快速操作 -->
