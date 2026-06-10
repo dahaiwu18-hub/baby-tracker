@@ -911,21 +911,19 @@ const App = {
 
   // ==================== 历史统计页面 ====================
   async _renderHistory(container) {
-    let filterType = 'feeding';
+    let filterType = 'daily';
 
     const renderList = async () => {
       container.innerHTML = `
         <div class="history-filters">
-          <button class="btn ${filterType === 'feeding' ? 'btn-primary' : 'btn-secondary'}" onclick="App._switchHistoryFilter('feeding')">🍼 喂养</button>
-          <button class="btn ${filterType === 'diaper' ? 'btn-primary' : 'btn-secondary'}" onclick="App._switchHistoryFilter('diaper')">🩲 尿布</button>
-          <button class="btn ${filterType === 'vitamin' ? 'btn-primary' : 'btn-secondary'}" onclick="App._switchHistoryFilter('vitamin')">💊 维生素</button>
+          <button class="btn ${filterType === 'daily' ? 'btn-primary' : 'btn-secondary'}" onclick="App._switchHistoryFilter('daily')">📅 每日汇总</button>
           <button class="btn ${filterType === 'growth' ? 'btn-primary' : 'btn-secondary'}" onclick="App._switchHistoryFilter('growth')">📏 生长</button>
         </div>
         <div id="historyContent">
           <div class="text-center mt-16"><div class="spinner"></div></div>
         </div>
         <div id="historyChart" class="chart-container mt-16" style="display:none">
-          <div class="card-title">📈 趋势图</div>
+          <div class="card-title">📈 奶量趋势</div>
           <canvas id="historyChartCanvas"></canvas>
         </div>
       `;
@@ -933,120 +931,116 @@ const App = {
       const contentEl = document.getElementById('historyContent');
 
       try {
-        if (filterType === 'feeding') {
+        if (filterType === 'daily') {
           const today = new Date();
           const startDate = new Date(today);
-          startDate.setDate(startDate.getDate() - 7);
-          const feedings = await DB.getFeedings(startDate.toISOString(), today.toISOString());
+          startDate.setDate(startDate.getDate() - 6);
+          const endISO = today.toISOString();
+          const startISO = startDate.toISOString();
 
-          if (feedings.length === 0) {
-            contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>暂无喂养记录</p></div>';
-            return;
+          const [feedings, diapers, vitamins] = await Promise.all([
+            DB.getFeedings(startISO, endISO),
+            DB.getDiapersRange(startISO, endISO),
+            DB.getRecentVitamins(7)
+          ]);
+
+          // 只统计拉屎（poop/both）
+          const poops = diapers.filter(d => d.type === 'poop' || d.type === 'both');
+
+          // 按日分组
+          const dailyMap = {};
+          for (let i = 0; i < 7; i++) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const key = d.toISOString().split('T')[0];
+            dailyMap[key] = { feedings: [], totalMilk: 0, poops: [], vitamins: [] };
           }
 
-          // 按日汇总
-          const dailyMap = {};
           feedings.forEach(f => {
             const day = f.created_at.split('T')[0];
-            if (!dailyMap[day]) dailyMap[day] = { total: 0, count: 0 };
-            if (f.amount_ml) dailyMap[day].total += Number(f.amount_ml);
-            dailyMap[day].count++;
+            if (dailyMap[day]) {
+              dailyMap[day].feedings.push(f);
+              if (f.amount_ml) dailyMap[day].totalMilk += Number(f.amount_ml);
+            }
           });
 
+          poops.forEach(p => {
+            const day = p.created_at.split('T')[0];
+            if (dailyMap[day]) dailyMap[day].poops.push(p);
+          });
+
+          vitamins.forEach(v => {
+            if (dailyMap[v.record_date]) dailyMap[v.record_date].vitamins.push(v);
+          });
+
+          const sortedDays = Object.keys(dailyMap).sort().reverse();
+          const hasData = sortedDays.some(d => dailyMap[d].feedings.length > 0 || dailyMap[d].poops.length > 0 || dailyMap[d].vitamins.length > 0);
+
+          if (!hasData) {
+            contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>暂无记录</p></div>';
+            return;
+          }
+
+          const totalMilk7 = sortedDays.reduce((s, d) => s + dailyMap[d].totalMilk, 0);
+          const totalFeed7 = sortedDays.reduce((s, d) => s + dailyMap[d].feedings.length, 0);
+          const totalPoop7 = sortedDays.reduce((s, d) => s + dailyMap[d].poops.length, 0);
+
           contentEl.innerHTML = `
             <div class="card">
-              <div class="card-title">📊 最近 7 天喂养统计</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-                <div><div class="stat-sub">总次数</div><div class="card-value">${feedings.length}</div></div>
-                <div><div class="stat-sub">总奶量</div><div class="card-value">${Object.values(dailyMap).reduce((s, d) => s + d.total, 0)}<span style="font-size:14px;color:#B2BEC3"> ml</span></div></div>
-              </div>
-              <div class="history-list">
-                ${feedings.slice(0, 30).map(f => `
-                  <div class="record-item">
-                    <div class="record-item-icon">🍼</div>
-                    <div class="record-item-info">
-                      <div class="record-item-title">${f.feeding_type === 'breastfeeding' ? '母乳' : f.feeding_type === 'formula' ? '配方奶' : f.feeding_type === 'pumped_milk' ? '挤奶' : '辅食'} ${f.amount_ml ? f.amount_ml + 'ml' : ''}</div>
-                      <div class="record-item-meta">${this._formatDate(f.created_at)} ${this._formatTime(f.created_at)}</div>
-                    </div>
-                    <button class="record-item-action" onclick="App._deleteRecord('feeding','${f.id}')">✕</button>
-                  </div>
-                `).join('')}
+              <div class="card-title">📊 最近 7 天汇总</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+                <div style="text-align:center"><div class="stat-sub">总奶量</div><div class="card-value" style="font-size:18px">${totalMilk7}<span style="font-size:12px;color:#B2BEC3"> ml</span></div></div>
+                <div style="text-align:center"><div class="stat-sub">喂奶次数</div><div class="card-value" style="font-size:18px">${totalFeed7}</div></div>
+                <div style="text-align:center"><div class="stat-sub">拉屎次数</div><div class="card-value" style="font-size:18px">${totalPoop7}</div></div>
               </div>
             </div>
+
+            ${sortedDays.map(day => {
+              const d = dailyMap[day];
+              const feedDetail = d.feedings.map(f => {
+                const t = this._formatTime(f.created_at);
+                const typeMap = { breastfeeding: '母乳', formula: '配方奶', pumped_milk: '挤奶', solid_food: '辅食' };
+                return `<span style="font-size:12px">${t} ${typeMap[f.feeding_type]||f.feeding_type} ${f.amount_ml||0}ml</span>`;
+              }).join('<br>');
+
+              const poopDetail = d.poops.length > 0
+                ? d.poops.map(p => `<span style="font-size:12px">💩 ${this._formatTime(p.created_at)}</span>`).join('<br>')
+                : '<span style="font-size:12px;color:#B2BEC3">—</span>';
+
+              const vitDetail = d.vitamins.length > 0
+                ? d.vitamins.map(v => `<span class="vitamin-pill vitamin-${v.vitamin_type==='AD'?'ad':'d3'}" style="font-size:11px;padding:1px 6px">${v.vitamin_type}</span>`).join(' ')
+                : '<span style="font-size:12px;color:#B2BEC3">—</span>';
+
+              const isToday = day === today.toISOString().split('T')[0];
+              const dateLabel = this._formatDate(day + 'T00:00:00.000Z') + (isToday ? ' ⬅' : '');
+
+              return `
+                <div class="card" style="margin-top:10px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                    <span style="font-weight:600;font-size:15px">${dateLabel}</span>
+                    <span style="font-size:13px;color:#FF6B6B">🍼 ${d.totalMilk}ml（${d.feedings.length}次）</span>
+                  </div>
+                  <table style="width:100%;font-size:13px;border-collapse:collapse">
+                    <tr>
+                      <td style="padding:4px 6px;color:#B2BEC3;width:60px;vertical-align:top">🍼 喂养</td>
+                      <td style="padding:4px 6px;line-height:1.8">${feedDetail || '<span style="color:#B2BEC3">—</span>'}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:4px 6px;color:#B2BEC3;vertical-align:top">💩 拉屎</td>
+                      <td style="padding:4px 6px;line-height:1.8">${poopDetail}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:4px 6px;color:#B2BEC3;vertical-align:top">💊 维生素</td>
+                      <td style="padding:4px 6px">${vitDetail}</td>
+                    </tr>
+                  </table>
+                </div>
+              `;
+            }).join('')}
           `;
 
-          // 绘制图表
+          // 奶量图表
           this._renderFeedingChart(dailyMap);
-
-        } else if (filterType === 'diaper') {
-          const today = new Date();
-          const startDate = new Date(today);
-          startDate.setDate(startDate.getDate() - 7);
-          const diapers = await DB.getDiapersRange(startDate.toISOString(), today.toISOString());
-
-          if (diapers.length === 0) {
-            contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>暂无尿布记录</p></div>';
-            return;
-          }
-
-          contentEl.innerHTML = `
-            <div class="card">
-              <div class="card-title">📊 最近 7 天尿布记录</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
-                <div><div class="stat-sub">💩 便便</div><div class="card-value">${diapers.filter(d => d.type === 'poop' || d.type === 'both').length}</div></div>
-                <div><div class="stat-sub">💦 尿尿</div><div class="card-value">${diapers.filter(d => d.type === 'pee' || d.type === 'both').length}</div></div>
-                <div><div class="stat-sub">总次数</div><div class="card-value">${diapers.length}</div></div>
-              </div>
-              <div class="history-list">
-                ${diapers.slice(0, 30).map(d => {
-                  const typeMap = { pee: '💦 尿尿', poop: '💩 便便', both: '💩💦 都有' };
-                  return `
-                    <div class="record-item">
-                      <div class="record-item-icon">🩲</div>
-                      <div class="record-item-info">
-                        <div class="record-item-title">${typeMap[d.type] || d.type}</div>
-                        <div class="record-item-meta">${this._formatDate(d.created_at)} ${this._formatTime(d.created_at)}</div>
-                      </div>
-                      <button class="record-item-action" onclick="App._deleteRecord('diaper','${d.id}')">✕</button>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            </div>
-          `;
-
-        } else if (filterType === 'vitamin') {
-          const vitamins = await DB.getRecentVitamins(30);
-
-          if (vitamins.length === 0) {
-            contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>暂无维生素记录</p></div>';
-            return;
-          }
-
-          const adCount = vitamins.filter(v => v.vitamin_type === 'AD').length;
-          const d3Count = vitamins.filter(v => v.vitamin_type === 'D3').length;
-
-          contentEl.innerHTML = `
-            <div class="card">
-              <div class="card-title">📊 最近 30 天维生素记录</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-                <div><div class="stat-sub">AD 次数</div><div class="card-value">${adCount}</div></div>
-                <div><div class="stat-sub">D3 次数</div><div class="card-value">${d3Count}</div></div>
-              </div>
-              <div class="history-list">
-                ${vitamins.slice(0, 30).map(v => `
-                  <div class="record-item">
-                    <div class="record-item-icon">💊</div>
-                    <div class="record-item-info">
-                      <div class="record-item-title"><span class="vitamin-pill vitamin-${v.vitamin_type === 'AD' ? 'ad' : 'd3'}">${v.vitamin_type}</span></div>
-                      <div class="record-item-meta">${v.record_date} ${v.time || ''}</div>
-                    </div>
-                    <button class="record-item-action" onclick="App._deleteRecord('vitamin','${v.id}')">✕</button>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
 
         } else if (filterType === 'growth') {
           const growth = await DB.getGrowthRecords();
@@ -1055,9 +1049,6 @@ const App = {
             contentEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>暂无生长记录</p></div>';
             return;
           }
-
-          const latest = growth[0];
-          const first = growth[growth.length - 1];
 
           contentEl.innerHTML = `
             <div class="card">
@@ -1077,7 +1068,6 @@ const App = {
             </div>
           `;
 
-          // 绘制生长曲线
           if (growth.length >= 2 && growth[0].weight_kg) {
             this._renderGrowthChart(growth);
           }
@@ -1087,7 +1077,6 @@ const App = {
       }
     };
 
-    // 保存过滤状态到 App 以便切换
     this._switchHistoryFilter = (type) => {
       filterType = type;
       renderList();
@@ -1105,7 +1094,7 @@ const App = {
     chartContainer.style.display = 'block';
 
     const days = Object.keys(dailyMap).sort();
-    const values = days.map(d => dailyMap[d].total);
+    const values = days.map(d => dailyMap[d].totalMilk || 0);
 
     // 销毁旧图表
     if (this._feedingChart) this._feedingChart.destroy();
