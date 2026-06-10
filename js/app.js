@@ -149,21 +149,40 @@ const App = {
     return `${String(h).padStart(2, '0')}:${m[2]}`;
   },
 
-  /** 显示北京日期 */
+  /** 显示北京日期（从 UTC ISO） */
   _formatDate(isoStr) {
     if (!isoStr) return '';
     const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):/);
     if (!m) return '';
-    // UTC 日期 + 考虑 UTC 小时 +8 可能跨天
     const utcH = parseInt(m[4]);
     const d = new Date(Date.UTC(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]), utcH + 8));
     return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+  },
+
+  /** 北京日期 YYYY-MM-DD → M月D日 */
+  _formatDateShort(bjDate) {
+    if (!bjDate) return '';
+    const [y, m, d] = bjDate.split('-').map(Number);
+    return `${m}月${d}日`;
   },
 
   /** 今天北京日期 YYYY-MM-DD */
   _getToday() {
     const bj = this._beijingNow();
     return `${bj.y}-${String(bj.m).padStart(2, '0')}-${String(bj.d).padStart(2, '0')}`;
+  },
+
+  /** UTC ISO 时间 → 北京时间日期 key (YYYY-MM-DD) */
+  _bjDateKey(isoStr) {
+    if (!isoStr) return '';
+    const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):/);
+    if (!m) return isoStr.split('T')[0] || '';
+    const utcH = parseInt(m[4]);
+    const d = new Date(Date.UTC(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]), utcH + 8));
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const da = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${mo}-${da}`;
   },
 
   /** 返回北京时间 HH:MM */
@@ -947,17 +966,17 @@ const App = {
           // 只统计拉屎（poop/both）
           const poops = diapers.filter(d => d.type === 'poop' || d.type === 'both');
 
-          // 按日分组
+          // 按日分组（统一用北京时间日期作为 key）
           const dailyMap = {};
           for (let i = 0; i < 7; i++) {
-            const d = new Date(today);
+            const d = new Date();
             d.setDate(d.getDate() - i);
-            const key = d.toISOString().split('T')[0];
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             dailyMap[key] = { feedings: [], totalMilk: 0, poops: [], vitamins: [] };
           }
 
           feedings.forEach(f => {
-            const day = f.created_at.split('T')[0];
+            const day = this._bjDateKey(f.created_at);
             if (dailyMap[day]) {
               dailyMap[day].feedings.push(f);
               if (f.amount_ml) dailyMap[day].totalMilk += Number(f.amount_ml);
@@ -965,7 +984,7 @@ const App = {
           });
 
           poops.forEach(p => {
-            const day = p.created_at.split('T')[0];
+            const day = this._bjDateKey(p.created_at);
             if (dailyMap[day]) dailyMap[day].poops.push(p);
           });
 
@@ -1011,8 +1030,8 @@ const App = {
                 ? d.vitamins.map(v => `<span class="vitamin-pill vitamin-${v.vitamin_type==='AD'?'ad':'d3'}" style="font-size:11px;padding:1px 6px">${v.vitamin_type}</span>`).join(' ')
                 : '<span style="font-size:12px;color:#B2BEC3">—</span>';
 
-              const isToday = day === today.toISOString().split('T')[0];
-              const dateLabel = this._formatDate(day + 'T00:00:00.000Z') + (isToday ? ' ⬅' : '');
+              const isToday = day === this._getToday();
+               const dateLabel = this._formatDateShort(day) + (isToday ? ' ⬅' : '');
 
               return `
                 <div class="card" style="margin-top:10px">
