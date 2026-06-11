@@ -1003,15 +1003,42 @@ const App = {
           const totalMilk7 = sortedDays.reduce((s, d) => s + dailyMap[d].totalMilk, 0);
           const totalFeed7 = sortedDays.reduce((s, d) => s + dailyMap[d].feedings.length, 0);
           const totalPoop7 = sortedDays.reduce((s, d) => s + dailyMap[d].poops.length, 0);
+          const avgPerMeal = Math.round(totalMilk7 / 42); // 7天×6顿=42
 
           contentEl.innerHTML = `
             <div class="card">
               <div class="card-title">📊 最近 7 天汇总</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:16px">
                 <div style="text-align:center"><div class="stat-sub">总奶量</div><div class="card-value" style="font-size:18px">${totalMilk7}<span style="font-size:12px;color:#B2BEC3"> ml</span></div></div>
-                <div style="text-align:center"><div class="stat-sub">喂奶次数</div><div class="card-value" style="font-size:18px">${totalFeed7}</div></div>
-                <div style="text-align:center"><div class="stat-sub">拉屎次数</div><div class="card-value" style="font-size:18px">${totalPoop7}</div></div>
+                <div style="text-align:center"><div class="stat-sub">喂奶</div><div class="card-value" style="font-size:18px">${totalFeed7}<span style="font-size:12px;color:#B2BEC3">次</span></div></div>
+                <div style="text-align:center"><div class="stat-sub">拉屎</div><div class="card-value" style="font-size:18px">${totalPoop7}<span style="font-size:12px;color:#B2BEC3">次</span></div></div>
+                <div style="text-align:center"><div class="stat-sub">单顿</div><div class="card-value" style="font-size:18px">${avgPerMeal}<span style="font-size:12px;color:#B2BEC3"> ml</span></div></div>
               </div>
+            </div>
+
+            <div style="background:linear-gradient(135deg,#FFF5F5,#FFF0F0);border-radius:12px;padding:12px 16px;margin-bottom:14px;text-align:center">
+              <div style="font-size:12px;color:#FF6B6B;margin-bottom:4px">🥛 近 7 天平均单顿奶量</div>
+              <div style="font-size:26px;font-weight:800;color:#FF6B6B">~${avgPerMeal} ml</div>
+              <div style="font-size:11px;color:#B2BEC3;margin-top:2px">总奶量 ${totalMilk7}ml ÷ 42 顿（7天×6顿/天）</div>
+            </div>
+
+            <div class="card" style="margin-bottom:10px">
+              <div class="card-title">📋 近 7 天单顿奶量明细</div>
+              <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;color:#B2BEC3;border-bottom:2px solid #F0F0F0;margin-bottom:6px">
+                <span style="min-width:56px">日期</span>
+                <span style="min-width:80px;text-align:center">总奶量</span>
+                <span style="min-width:70px;text-align:right">单顿 ≈</span>
+              </div>
+              ${sortedDays.map(day => {
+                const d = dailyMap[day];
+                const meal = d.totalMilk > 0 ? Math.round(d.totalMilk / 6) : 0;
+                const isToday = day === this._getToday();
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #F5F5F5;font-size:13px">
+                  <span style="font-weight:600;color:#2D3436;min-width:56px">${this._formatDateShort(day)}${isToday ? '<span style="background:#FF6B6B;color:#FFF;font-size:10px;padding:1px 5px;border-radius:8px;margin-left:4px">今</span>' : ''}</span>
+                  <span style="color:#FF6B6B;font-weight:500;min-width:80px;text-align:center">🍼 ${d.totalMilk}ml</span>
+                  <span style="color:#0984E3;font-weight:700;min-width:70px;text-align:right">${meal} ml</span>
+                </div>`;
+              }).join('')}
             </div>
 
             ${sortedDays.map(day => {
