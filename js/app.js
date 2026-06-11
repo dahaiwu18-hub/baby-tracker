@@ -394,7 +394,7 @@ const App = {
           </div>
           <div class="form-group">
             <label>奶量 (ml)</label>
-            <input type="number" id="quickFeedAmount" placeholder="默认 150ml" min="0" value="150">
+            <input type="number" id="quickFeedAmount" placeholder="默认 160ml" min="0" value="160">
           </div>
           <div class="form-group" id="feedSideGroup">
             <label>吃奶侧</label>
@@ -441,7 +441,7 @@ const App = {
         await DB.addFeeding({
           feeding_type: type,
           feed_time: feedTime || null,
-          amount_ml: amount ? Number(amount) : 150,
+          amount_ml: amount ? Number(amount) : 160,
           side: side || null,
           created_at: feedTime ? this._bjToISO(feedTime) : undefined,
           created_by: localStorage.getItem('user_name') || '家长'
@@ -568,7 +568,7 @@ const App = {
             </div>
             <div class="form-group" id="feedingAmountGroup">
               <label>奶量 (ml)</label>
-              <input type="number" id="feedingAmount" placeholder="默认 150ml" min="0" value="150">
+              <input type="number" id="feedingAmount" placeholder="默认 160ml" min="0" value="160">
             </div>
             <div class="form-group" id="feedingSideGroup" style="display:none">
               <label>吃奶侧</label>
@@ -736,7 +736,7 @@ const App = {
       await DB.addFeeding({
         feeding_type: type,
         feed_time: feedTime || null,
-        amount_ml: amount ? Number(amount) : 150,
+        amount_ml: amount ? Number(amount) : 160,
         side: type === 'breastfeeding' ? side : null,
         notes: notes || null,
         created_at: feedTime ? this._bjToISO(feedTime) : undefined,
